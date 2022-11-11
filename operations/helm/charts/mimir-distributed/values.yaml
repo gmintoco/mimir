@@ -240,6 +240,12 @@ mimir:
         graphite_querier:
           url: http://{{ template "mimir.fullname" . }}-graphite-querier.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         {{- end}}
+        {{- if and .Values.enterprise.enabled .Values.datadog.enabled }}
+        datadog_write_proxy:
+          url: http://{{ template "mimir-fullname" . }}-datadog-write-proxy.{{ .Release.Namespace}}.svc:{{ include "mimir.serverHttpListenPort" . }}
+        datadog_read_proxy:
+          url: http://{{ template "mimir-fullname" . }}-datadog-read-proxy.{{ .Release.Namespace}}.svc:{{ include "mimir.serverHttpListenPort" . }}
+        {{- end}}
     {{- end }}
 
     ingester:
@@ -352,6 +358,24 @@ mimir:
         metric_name_cache:
           memcached:
             addresses: dnssrvnoa+{{ template "mimir.fullname" . }}-gr-metricname-cache.{{ .Release.Namespace}}.svc:11211
+            timeout: 1s
+    {{- end}}
+
+    {{- if and .Values.enterprise.enabled .Values.datadog.enabled }}
+    datadog:
+      enabled: true
+
+      writes:
+        distributor_client:
+          address: dns:///{{ template "mimir.fullname" . }}-distributor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}
+
+      reads:
+        remote_read:
+          query_address: http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" .  }}/prometheus
+
+        writes_cache:
+          memcached:
+            addresses: dnssrvnoa+{{ template "mimir.fullname" . }}-gr-writes-cache.{{ .Release.Namespace}}.svc:11211
             timeout: 1s
     {{- end}}
 
@@ -3192,6 +3216,228 @@ gr-metricname-cache:
   extraContainers: []
 
   # -- Resource requests and limits for the graphite-metric-name-cache
+  # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
+  resources: null
+
+  # -- Service annotations and labels
+  service:
+    annotations: {}
+    labels: {}
+
+datadog:
+  enabled: true
+
+  reads:
+    replicas: 2
+
+    service:
+      annotations: {}
+      labels: {}
+
+    # -- Resources for datadog-proxy-reads pods
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+    # -- Additional datadog-proxy-reads container arguments, e.g. log level (debug, info, warn, error)
+    extraArgs: {}
+    # -- The name of the PriorityClass for datadog-proxy-reads pods
+    priorityClassName: null
+    # -- Labels for datadog-proxy-reads pods
+    podLabels: {}
+    # -- Annotations for datadog-proxy-reads pods
+    podAnnotations: {}
+
+    nodeSelector: {}
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                  - key: app.kubernetes.io/component
+                    operator: In
+                    values:
+                      - datadog-proxy-reads
+              topologyKey: 'kubernetes.io/hostname'
+
+    livenessProbe:
+      httpGet:
+        path: /ready
+        port: http-metrics
+      initialDelaySeconds: 45
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: http-metrics
+      initialDelaySeconds: 45
+
+    annotations: {}
+    persistence:
+      subPath:
+
+    securityContext:
+      fsGroup: 10001
+      runAsGroup: 10001
+      runAsNonRoot: true
+      runAsUser: 10001
+      seccompProfile:
+        type: RuntimeDefault
+
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: [ALL]
+
+    strategy:
+      type: RollingUpdate
+
+    terminationGracePeriodSeconds: 180
+
+    env: []
+    extraEnvFrom: []
+    tolerations: []
+    podDisruptionBudget: {}
+    initContainers: []
+    extraContainers: []
+    extraVolumes: []
+    extraVolumeMounts: []
+
+  writes:
+    replicas: 2
+
+    service:
+      annotations: {}
+      labels: {}
+
+    # -- Resources for datadog-proxy-writes pods
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+    # -- Additional datadog-proxy-writes container arguments, e.g. log level (debug, info, warn, error)
+    extraArgs: {}
+    # -- The name of the PriorityClass for datadog-proxy-writes pods
+    priorityClassName: null
+    # -- Labels for datadog-proxy-writes pods
+    podLabels: {}
+    # -- Annotations for datadog-proxy-writes pods
+    podAnnotations: {}
+    # -- Node selector for datadog-proxy-writes pods
+    nodeSelector: {}
+    # -- Affinity for datadog-proxy-writes pods
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                  - key: app.kubernetes.io/component
+                    operator: In
+                    values:
+                      - datadog-proxy-writes
+              topologyKey: 'kubernetes.io/hostname'
+
+    livenessProbe:
+      httpGet:
+        path: /ready
+        port: http-metrics
+      initialDelaySeconds: 45
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: http-metrics
+      initialDelaySeconds: 45
+
+    annotations: {}
+    persistence:
+      subPath:
+
+    securityContext:
+      fsGroup: 10001
+      runAsGroup: 10001
+      runAsNonRoot: true
+      runAsUser: 10001
+      seccompProfile:
+        type: RuntimeDefault
+
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: [ALL]
+
+    strategy:
+      type: RollingUpdate
+
+    terminationGracePeriodSeconds: 180
+
+    env: []
+    extraEnvFrom: []
+    tolerations: []
+    podDisruptionBudget: {}
+    initContainers: []
+    extraContainers: []
+    extraVolumes: []
+    extraVolumeMounts: []
+
+# Datadog's writes cache.
+dd-writes-cache:
+  # -- Specifies whether memcached based datadog-writes-cache should be enabled. Note that the cache will only appear if datadog is also enabled.
+  enabled: true
+
+  # -- Total number of datadog-writes-cache replicas
+  replicas: 1
+
+  # -- Port of the datadog-writes-cache service
+  port: 11211
+
+  # -- Amount of memory allocated to datadog-writes-cache for object storage (in MB).
+  allocatedMemory: 8192
+
+  # -- Maximum item memory for datadog-writes-cache (in MB).
+  maxItemMemory: 1
+
+  # -- Extra init containers for datadog-writes-cache pods
+  initContainers: []
+
+  # -- Annotations for the datadog-writes-cache pods
+  annotations: {}
+  # -- Node selector for datadog-writes-cache pods
+  nodeSelector: {}
+  # -- Affinity for datadog-writes-cache pods
+  affinity: {}
+  # -- Tolerations for datadog-writes-cache pods
+  tolerations: []
+  # -- Pod Disruption Budget
+  podDisruptionBudget: {}
+  # -- The name of the PriorityClass for datadog-writes-cache pods
+  priorityClassName: null
+  # -- Labels for datadog-writes-cache pods
+  podLabels: {}
+  # -- Annotations for datadog-writes-cache pods
+  podAnnotations: {}
+  # -- Management policy for datadog-writes-cache pods
+  podManagementPolicy: Parallel
+  # -- Grace period to allow the datadog-writes-cache to shutdown before it is killed
+  terminationGracePeriodSeconds: 60
+
+  # -- Stateful datadog-writes-cache strategy
+  statefulStrategy:
+    type: RollingUpdate
+
+  # -- Additional CLI args for datadog-writes-cache
+  extraArgs: {}
+
+  # -- Additional containers to be added to the datadog-writes-cache pod.
+  extraContainers: []
+
+  # -- Resource requests and limits for the datadog-writes-cache
   # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
   resources: null
 
