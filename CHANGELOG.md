@@ -118,6 +118,7 @@
 
 ### Documentation
 
+* [CHANGE] Moved the contents of `docs/sources` to `docs/sources/mimir`. #3549
 * [ENHANCEMENT] Documented how to configure HA deduplication using Consul in a Mimir Helm deployment. #2972
 * [ENHANCEMENT] Improve `MimirQuerierAutoscalerNotActive` runbook. #3186
 * [ENHANCEMENT] Improve `MimirSchedulerQueriesStuck` runbook to reflect debug steps with querier auto-scaling enabled. #3223
